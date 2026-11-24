@@ -4,14 +4,14 @@ pragma solidity 0.8.24;
 /**
  * @title LiquidAccountVault (LAV core r7)
  * @author lavFACTORY Standard authors — reference ERC-721 / accounting infrastructure
- * @dev Dual-engine body growth, protocol rent, 95/5 ragequit, factory wiring
+ * @dev Dual-engine body growth, protocol share & performance fee, 95/5 ragequit, factory wiring
  *
  * @notice Sovereign, non-custodial, unpausable vault that turns a project token into a
  *         yield-bearing transferable NFT position. Deployed through LavFactory.
  *
  *         Economics:
  *         - Tax body: 10% protocol / 90% shared body growth
- *         - Yield:    10% protocol / 90% stakers
+ *         - Yield:    10% protocol fee / 90% stakers
  *         - Exit:     5% body burn on ragequit, 100% yield returned
  *         - No creator fee. No pause. Ragequit always available.
  *
