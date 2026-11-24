@@ -49,6 +49,11 @@ Any project can create a sovereign vault for its ERC-20 token. Stakers deposit t
 - **Empty Vault Protection:** If all positions exit or before the first deposit (`totalShares == 0`), the stream timer pauses automatically (`periodFinish` shifts forward: `periodFinish += block.timestamp - last`). When a new deposit arrives, the stream resumes without any loss of reward funds.
 - The vault owner receives no allocation of reward-token yield and cannot withdraw unstreamed staker funds. The only case where the owner receives staking tokens is the empty-vault tax sweep described in Engine 1.
 
+##### Yield Inflow Paths: Adapters & Direct Top-ups
+A vault receives and streams yield through two distinct mechanisms:
+- **Automated Pool Routing (Adapters):** For vaults paired with Pons Labs liquidity pools, deployed adapter instances (`LavAdapterPns` or `LavAdapterPnsEth`) claim creator fees from the Pons Labs fee escrow and route them into the vault stream on each `pull()`. Multiple adapters can route into a single vault (`1 vault -> N adapters`), allowing one vault to aggregate creator fees across multiple pools.
+- **Direct Manual Top-up (Any Vault):** Any vault created via `LavFactory` can receive arbitrary yield directly. The project team, community members, or external revenue sources (e.g. protocol fees, OTC sales, merchandise) can transfer `yieldToken` directly to the vault contract address and call `syncYield()`. The newly received yield is immediately added to the active 24-hour linear streaming schedule for all stakers.
+
 ### 4. Claiming & Ragequit Exit
 - **Yield Claim (`claimYield`):** Accrued yield can be claimed at any time with 0% penalty and 0% withdrawal fees. The underlying position remains active.
 - **Ragequit (`ragequit`):** 
@@ -76,8 +81,8 @@ The owner **cannot** access user deposits, adjust fee parameters, pause the vaul
 ## Ecosystem Modules & Adapters
 
 Ecosystem adapters route liquidity pool creator fees and external revenue streams into individual vaults. Each pool has its own deployed adapter instance:
-- **`LavAdapterPns`:** Universal adapter for ERC-20 quote pairs (including USDG and tokenized stocks). Routes creator trading fees from PNS liquidity pair fee escrows into the corresponding vault. `usdg()` is the getter for the immutable pair token (either USDG or tokenized stock).
-- **`LavAdapterPnsEth`:** Claims native ETH creator trading fees from PNS escrow, wraps them into WETH, and routes WETH yield into the vault stream.
+- **`LavAdapterPns`:** Universal adapter for ERC-20 quote pairs (including USDG and tokenized stocks). Routes creator trading fees from Pons Labs liquidity pair fee escrows into the corresponding vault. `usdg()` is the getter for the immutable pair token (either USDG or tokenized stock).
+- **`LavAdapterPnsEth`:** Claims native ETH creator trading fees from Pons Labs escrow, wraps them into WETH, and routes WETH yield into the vault stream.
 
 ### Fee Split & Protocol Treasury Mechanics
 The protocol treasury receives 10% of all incoming creator fees regardless of `vaultShareBps` (with rounding dust favoring the team):
@@ -85,7 +90,7 @@ The protocol treasury receives 10% of all incoming creator fees regardless of `v
 - **Team portion:** The remainder (`total - toVault`) is split: 90% to the project team wallet (`teamWallet`) and 10% to the protocol treasury (`PROTOCOL_SHARE_BPS = 1000`).
 - **Non-blocking failure recovery:** Failed transfers accrue independently to `vaultOwed`, `teamOwed`, and `treasuryOwed`. Any caller can settle accrued debts permissionlessly via `claimVaultOwed()`, `claimTeamOwed()`, and `claimTreasuryOwed()`.
 - **Supported tokens:** Standard ERC-20 tokens only. Rebasing, fee-on-transfer, and transfer-hook (ERC-777) tokens are unsupported and can cause accounting discrepancies or reentrancy.
-- **Throughput & Parameters:** Adapter throughput is throttled at `maxPullPerCall` per `minPullInterval` (both immutable). Excess fees remain safely in the PONS escrow and are paid out in subsequent pulls. Authoritative link is registered as the escrow `recipient`; `Bound` events are for discovery and indexing only.
+- **Throughput & Parameters:** Adapter throughput is throttled at `maxPullPerCall` per `minPullInterval` (both immutable). Excess fees remain safely in the Pons Labs escrow and are paid out in subsequent pulls. Authoritative link is registered as the escrow `recipient`; `Bound` events are for discovery and indexing only.
 - **Multi-Adapter Support:** A single vault can receive yield streams from multiple adapters simultaneously (1 vault -> N adapters). Each adapter is permanently locked to its target vault once bound.
 - **Dynamic Vaults:** Vaults are created permissionlessly via `LavFactory.createVault()` and are not listed in static deployment files. Enumerate them onchain via `allVaults(index)` and verify any address with `LavFactory.isVault(addr)`.
 
