@@ -74,7 +74,7 @@ Any project can create a sovereign vault for its ERC-20 token. Stakers deposit t
 
 Ecosystem adapters route liquidity pool creator fees and external revenue streams into individual vaults:
 - **`LavAdapterPns`:** Collects creator trading fees from PNS liquidity pair fee escrows (ERC-20 quote pairs like USDG) and routes them into the corresponding vault. Features immutable execution, permissionless `pull()` calls with interval and rate throttles, and non-blocking failure recovery (`claim*Owed`).
-- **`LavAdapterPnsEth`:** Handles native ETH creator trading fees from native/WETH fee escrows on Robinhood Chain, wrapping or routing native execution directly into the vault stream with the same permissionless throttle and failure recovery safeguards.
+- **`LavAdapterPnsEth`:** Claims native ETH creator trading fees from the PNS fee escrow on Robinhood Chain, wraps the proceeds into WETH, and routes the WETH yield into the vault stream with rate/interval throttles and non-blocking failure recovery (`claim*Owed`).
 
 ---
 
