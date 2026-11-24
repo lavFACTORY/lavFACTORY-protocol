@@ -75,9 +75,37 @@ The owner **cannot** access user deposits, adjust fee parameters, pause the vaul
 
 ## Ecosystem Modules & Adapters
 
-Ecosystem adapters route liquidity pool creator fees and external revenue streams into individual vaults:
-- **`LavAdapterPns`:** Collects creator trading fees from PNS liquidity pair fee escrows (ERC-20 quote pairs like USDG) and routes them into the corresponding vault. Features immutable execution, permissionless `pull()` calls with interval and rate throttles, and non-blocking failure recovery (`claim*Owed`).
-- **`LavAdapterPnsEth`:** Claims native ETH creator trading fees from the PNS fee escrow on Robinhood Chain, wraps the proceeds into WETH, and routes the WETH yield into the vault stream with rate/interval throttles and non-blocking failure recovery (`claim*Owed`).
+Ecosystem adapters route liquidity pool creator fees and external revenue streams into individual vaults. Each pool has its own deployed adapter instance:
+- **`LavAdapterPns`:** Universal adapter for ERC-20 quote pairs (including USDG and tokenized stocks). Routes creator trading fees from PNS liquidity pair fee escrows into the corresponding vault. `usdg()` is the getter for the immutable pair token (either USDG or tokenized stock).
+- **`LavAdapterPnsEth`:** Claims native ETH creator trading fees from PNS escrow, wraps them into WETH, and routes WETH yield into the vault stream.
+
+### Fee Split & Protocol Treasury Mechanics
+The protocol treasury receives 10% of all incoming creator fees regardless of `vaultShareBps` (with rounding dust favoring the team):
+- **Vault portion:** `vaultShareBps` is expressed in bps of trading volume (minimum `MIN_VAULT_SHARE_BPS = 100`, i.e. 1%) and cannot exceed the pool's total creator fee (`totalCreatorBps`). The vault receives `vaultShareBps / totalCreatorBps` of every pulled amount. Inside the vault, 10% is retained by the protocol treasury (`YIELD_PROTOCOL_FEE_BPS = 1000`) and 90% is streamed over 24 hours to active stakers.
+- **Team portion:** The remainder (`total - toVault`) is split: 90% to the project team wallet (`teamWallet`) and 10% to the protocol treasury (`PROTOCOL_SHARE_BPS = 1000`).
+- **Non-blocking failure recovery:** Failed transfers accrue independently to `vaultOwed`, `teamOwed`, and `treasuryOwed`. Any caller can settle accrued debts permissionlessly via `claimVaultOwed()`, `claimTeamOwed()`, and `claimTreasuryOwed()`.
+- **Supported tokens:** Standard ERC-20 tokens only. Rebasing, fee-on-transfer, and transfer-hook (ERC-777) tokens are unsupported and can cause accounting discrepancies or reentrancy.
+- **Throughput & Parameters:** Adapter throughput is throttled at `maxPullPerCall` per `minPullInterval` (both immutable). Excess fees remain safely in the PONS escrow and are paid out in subsequent pulls. Authoritative adapter link is registered as the escrow `recipient`; `Bound` events can be used for indexing.
+- **Dynamic Vaults:** Vaults are created permissionlessly via `LavFactory.createVault()` and are not listed in static deployment files. Enumerate them onchain via `allVaults(index)` and verify any address with `LavFactory.isVault(addr)`.
+
+#### Protocol Fee Accounting & Split Breakdown
+The protocol treasury retains 10% of gross incoming creator fees pulled by an adapter, regardless of the split configured between the vault and the project team. Because both the vault portion and the team portion are subject to the same 10% rate, the aggregate fee received by the treasury remains 10% across all allocation ratios:
+
+$$\text{Total Fee} = 10\% \times \text{Vault Share} + 10\% \times \text{Team Share} = 10\% \times (\text{Vault Share} + \text{Team Share}) = 10\%$$
+
+- **Example 1 (40% Vault / 60% Team Allocation):**
+  - Gross creator fees pulled: 100 USDG
+  - Vault portion (40 USDG): 4 USDG to protocol treasury (10%), 36 USDG streamed to active stakers (90%)
+  - Team portion (60 USDG): 6 USDG to protocol treasury (10%), 54 USDG paid to team wallet (90%)
+  - Total protocol fee collected: 4 + 6 = 10 USDG (10% of gross fees)
+
+- **Example 2 (1% Vault / 99% Team Allocation — Minimum Vault Floor):**
+  - Gross creator fees pulled: 100 USDG
+  - Vault portion (1 USDG): 0.10 USDG to protocol treasury (10%), 0.90 USDG streamed to active stakers (90%)
+  - Team portion (99 USDG): 9.90 USDG to protocol treasury (10%), 89.10 USDG paid to team wallet (90%)
+  - Total protocol fee collected: 0.10 + 9.90 = 10 USDG (10% of gross fees)
+
+- **Net Distribution Summary:** At any configured `vaultShareBps`, the protocol treasury receives 10% of gross fees, active stakers receive 90% of the vault allocation, and the project team receives 90% of the team allocation.
 
 ---
 
