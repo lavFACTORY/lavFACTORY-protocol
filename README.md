@@ -85,7 +85,8 @@ The protocol treasury receives 10% of all incoming creator fees regardless of `v
 - **Team portion:** The remainder (`total - toVault`) is split: 90% to the project team wallet (`teamWallet`) and 10% to the protocol treasury (`PROTOCOL_SHARE_BPS = 1000`).
 - **Non-blocking failure recovery:** Failed transfers accrue independently to `vaultOwed`, `teamOwed`, and `treasuryOwed`. Any caller can settle accrued debts permissionlessly via `claimVaultOwed()`, `claimTeamOwed()`, and `claimTreasuryOwed()`.
 - **Supported tokens:** Standard ERC-20 tokens only. Rebasing, fee-on-transfer, and transfer-hook (ERC-777) tokens are unsupported and can cause accounting discrepancies or reentrancy.
-- **Throughput & Parameters:** Adapter throughput is throttled at `maxPullPerCall` per `minPullInterval` (both immutable). Excess fees remain safely in the PONS escrow and are paid out in subsequent pulls. Authoritative adapter link is registered as the escrow `recipient`; `Bound` events can be used for indexing.
+- **Throughput & Parameters:** Adapter throughput is throttled at `maxPullPerCall` per `minPullInterval` (both immutable). Excess fees remain safely in the PONS escrow and are paid out in subsequent pulls. Authoritative link is registered as the escrow `recipient`; `Bound` events are for discovery and indexing only.
+- **Multi-Adapter Support:** A single vault can receive yield streams from multiple adapters simultaneously (1 vault -> N adapters). Each adapter is permanently locked to its target vault once bound.
 - **Dynamic Vaults:** Vaults are created permissionlessly via `LavFactory.createVault()` and are not listed in static deployment files. Enumerate them onchain via `allVaults(index)` and verify any address with `LavFactory.isVault(addr)`.
 
 #### Protocol Fee Accounting & Split Breakdown
