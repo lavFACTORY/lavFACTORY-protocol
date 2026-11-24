@@ -2,43 +2,15 @@
 pragma solidity 0.8.24;
 
 import {Test} from "forge-std/Test.sol";
-import {LavAdapterPnsEth, IPnsFeeEscrowNative, IWETH} from "../src/adapters/LavAdapterPnsEth.sol";
-import {IERC20, PnsFeePolicy, PnsLaunch, IPnsFactory, ILavVault, ILavFactory} from "../src/adapters/LavAdapterPns.sol";
-import {MockPnsFactory, MockLavFactory, MockLavVault} from "./Adapters.t.sol";
-
-contract MockWETH is IERC20, IWETH {
-    mapping(address => uint256) public balanceOf;
-    uint8 public decimals = 18;
-
-    function deposit() external payable {
-        balanceOf[msg.sender] += msg.value;
-    }
-
-    function transfer(address to, uint256 amount) external returns (bool) {
-        require(balanceOf[msg.sender] >= amount, "balance");
-        balanceOf[msg.sender] -= amount;
-        balanceOf[to] += amount;
-        return true;
-    }
-}
-
-contract MockPnsFeeEscrowNative is IPnsFeeEscrowNative {
-    mapping(address => uint256) public balanceOf;
-
-    function setBalance(address recipient, uint256 amount) external {
-        balanceOf[recipient] = amount;
-    }
-
-    function claim(uint256 amount) external returns (uint256) {
-        require(balanceOf[msg.sender] >= amount, "escrow bal");
-        balanceOf[msg.sender] -= amount;
-        (bool ok,) = msg.sender.call{value: amount}("");
-        require(ok, "eth transfer failed");
-        return amount;
-    }
-
-    receive() external payable {}
-}
+import {LavAdapterPnsEth} from "../src/adapters/LavAdapterPnsEth.sol";
+import {PnsFeePolicy, PnsLaunch} from "../src/adapters/LavAdapterPns.sol";
+import {
+    MockWETH,
+    MockPnsFeeEscrowNative,
+    MockPnsFactory,
+    MockLavFactory,
+    MockLavVault
+} from "./Mocks.sol";
 
 contract AdaptersEthTest is Test {
     LavAdapterPnsEth public adapter;
