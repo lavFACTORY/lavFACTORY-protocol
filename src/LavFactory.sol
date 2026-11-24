@@ -3,8 +3,9 @@ pragma solidity 0.8.24;
 
 /**
  * @title LavFactory
+ * @author lavFACTORY protocol author
  * @notice lavFACTORY: canonical vault factory and registry of the lavFACTORY protocol. Deploys LAV (LiquidAccountVaults)
- *         vaults and records them (isVault, allVaults, tokenToVaults). `isVault` means "created by this contract",
+ *         and records them (isVault, allVaults, tokenToVaults). `isVault` means "created by this contract",
  *         not "reviewed" or "safe". The factory does not issue tokens.
  *         Permissionless multi-vault deployment. No owner, no admin, no pause.
  *         Anti-spam fee is fixed at exactly 0.002 ETH and forwarded to protocolTreasury.
