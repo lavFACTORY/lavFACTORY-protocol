@@ -80,6 +80,25 @@ The owner **cannot** access user deposits, adjust fee parameters, pause the vaul
 
 ## Ecosystem Modules & Adapters
 
+### Architecture Boundaries and Scope of Adapters
+
+The core protocol (`LiquidAccountVault`, `LavFactory`, and `lavNFT`) constitutes an autonomous accounting and streaming system that is independent of any specific launchpad platform. The core contracts contain no dependencies on external deployment platforms.
+
+Peripheral adapters serve solely as optional upstream fee conduits for designated launchpad contracts and have no broader functional scope.
+
+- **Scoped Third-Party Targets (`LavAdapterPns`, `LavAdapterPnsEth`)**  
+  These adapters interface exclusively with the Pons V2 contract suite deployed on Robinhood Chain (Chain ID: 4663), specifically:  
+  - `PonsV2LaunchFactory` (`0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e`)  
+  - `PonsV2MemeHook` (`0xE5e702641Ea86F4ae6cC3cDaeD2B886f976Be044`)  
+  - `PonsV2FeeEscrow` (`0xd3AFEB2a57f70eF218Aa82451c51B2fb0416Ac9e`)  
+
+  Their functionality is strictly limited to claiming accumulated creator quote fees from the `PonsV2FeeEscrow` contract and distributing such fees between the vault and the designated team wallet.
+
+- **Non-Pons / Standalone Deployments**  
+  Tokens deployed outside the Pons V2 architecture do not utilise the PNS adapters. Any ERC-20 staking token may be paired with an arbitrary ERC-20 yield token through the `LavFactory.createVault()` function. Yield ingestion for standalone vaults is effected by direct transfer of assets to the vault address, followed by permissionless calls to the `syncYield()` function.
+
+---
+
 Ecosystem adapters route liquidity pool creator fees and external revenue streams into individual vaults. Each pool has its own deployed adapter instance:
 - **`LavAdapterPns`:** Universal adapter for ERC-20 quote pairs (including USDG and tokenized stocks). Routes creator trading fees from Pons V2 (Pons Labs) liquidity pair fee escrows into the corresponding vault. `usdg()` is the getter for the immutable pair token (either USDG or tokenized stock).
 - **`LavAdapterPnsEth`:** Claims native ETH creator trading fees from Pons V2 (Pons Labs) fee escrow, wraps them into WETH, and routes WETH yield into the vault stream.
