@@ -4,8 +4,8 @@ pragma solidity 0.8.24;
 /// @title LavAdapterPns: lavADAPTER v1.0.1 (PNS)
 /// @author lavFACTORY protocol author
 /// @notice One adapter per PNS token. Receives the creator fee stream from the PNS fee escrow,
-///         splits it between the lavNFT vault (creator tax part) and a team wallet (base part).
-///         10% of the team part goes to the protocol treasury (the one the vault uses).
+///         routes the creator tax directly to the lavNFT vault, and splits the base creator fee
+///         (90% to team wallet, 10% to the protocol treasury).
 ///         No admin, no proxy. The team wallet can only be changed by itself, in two steps.
 ///
 /// All rights reserved.
