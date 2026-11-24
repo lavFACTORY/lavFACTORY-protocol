@@ -24,3 +24,5 @@ Any incoming yield arrival merges unstreamed tokens into a fresh 24-hour distrib
 ## 6. Non-Standard Tokens & Decimals
 - Rebasing tokens or tokens with transfer limits/pauses can distort share accounting and are unsupported.
 - Tokens with 6 decimals experience negligible entry/exit variance from `SHARE_OFFSET = 1e6`; for 18-decimal tokens the difference is micro-dust (~10⁻¹² tokens).
+
+- **Empty-vault tax sweep:** while `totalShares == 0`, 90% of incoming staking-token tax goes to the current vault owner. An owner who is the sole staker could exit (paying the 5% ragequit burn) to route subsequent tax to themselves. Token projects integrating a vault should be aware of this when directing transfer taxes to it.
