@@ -71,3 +71,120 @@ contract MockRegistry {
         return address(uint160(uint256(keccak256("tba"))));
     }
 }
+
+// --- Adapter Mocks ---
+import {LavAdapterPns, IERC20, IPnsFeeEscrow, IPnsFactory, IPnsCurve, ILavVault, ILavFactory, PnsLaunch, PnsFeePolicy} from "../src/adapters/LavAdapterPns.sol";
+import {IPnsFeeEscrowNative, IWETH} from "../src/adapters/LavAdapterPnsEth.sol";
+
+contract MockPnsFeeEscrow is IPnsFeeEscrow {
+    mapping(address => mapping(address => uint256)) public balances;
+
+    function setBalance(address recipient, address token, uint256 amount) external {
+        balances[recipient][token] = amount;
+    }
+
+    function balanceOfToken(address recipient, address token) external view returns (uint256) {
+        return balances[recipient][token];
+    }
+
+    function claimToken(address token, uint256 amount) external returns (uint256) {
+        require(balances[msg.sender][token] >= amount, "escrow: insufficient balance");
+        balances[msg.sender][token] -= amount;
+        MockERC20(token).mint(msg.sender, amount);
+        return amount;
+    }
+}
+
+contract MockPnsFactory is IPnsFactory {
+    mapping(address => PnsLaunch) public launches;
+    mapping(address => PnsFeePolicy) public policies;
+
+    function setLaunch(address token, PnsLaunch memory l) external {
+        launches[token] = l;
+    }
+
+    function setPolicy(address token, PnsFeePolicy memory p) external {
+        policies[token] = p;
+    }
+
+    function setFeePolicy(address token, PnsFeePolicy memory p) external {
+        policies[token] = p;
+    }
+
+    function getLaunchedToken(address token) external view returns (PnsLaunch memory) {
+        return launches[token];
+    }
+
+    function getLaunchFeePolicy(address token) external view returns (PnsFeePolicy memory) {
+        return policies[token];
+    }
+}
+
+contract MockLavVault is ILavVault {
+    address public immutable override stakingToken;
+    address public immutable override yieldToken;
+    address public immutable override protocolTreasury;
+    uint256 public syncYieldCalls;
+    bool public shouldFailSync;
+
+    constructor(address _stakingToken, address _yieldToken, address _treasury) {
+        stakingToken = _stakingToken;
+        yieldToken = _yieldToken;
+        protocolTreasury = _treasury;
+    }
+
+    function setShouldFailSync(bool _fail) external {
+        shouldFailSync = _fail;
+    }
+
+    function syncYield() external override {
+        if (shouldFailSync) revert("sync failed");
+        syncYieldCalls++;
+    }
+}
+
+contract MockLavFactory is ILavFactory {
+    mapping(address => bool) public vaults;
+
+    function setVault(address v, bool isV) external {
+        vaults[v] = isV;
+    }
+
+    function isVault(address v) external view override returns (bool) {
+        return vaults[v];
+    }
+}
+
+contract MockWETH is IERC20, IWETH {
+    mapping(address => uint256) public balanceOf;
+    uint8 public decimals = 18;
+
+    function deposit() external payable {
+        balanceOf[msg.sender] += msg.value;
+    }
+
+    function transfer(address to, uint256 amount) external returns (bool) {
+        require(balanceOf[msg.sender] >= amount, "balance");
+        balanceOf[msg.sender] -= amount;
+        balanceOf[to] += amount;
+        return true;
+    }
+}
+
+contract MockPnsFeeEscrowNative is IPnsFeeEscrowNative {
+    mapping(address => uint256) public balanceOf;
+
+    function setBalance(address recipient, uint256 amount) external {
+        balanceOf[recipient] = amount;
+    }
+
+    function claim(uint256 amount) external returns (uint256) {
+        require(balanceOf[msg.sender] >= amount, "escrow bal");
+        balanceOf[msg.sender] -= amount;
+        (bool ok,) = msg.sender.call{value: amount}("");
+        require(ok, "eth transfer failed");
+        return amount;
+    }
+
+    receive() external payable {}
+}
