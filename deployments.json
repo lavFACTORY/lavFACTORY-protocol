@@ -1,0 +1,49 @@
+{
+  "network": {
+    "name": "Robinhood Chain",
+    "chainId": 4663,
+    "rpc": "https://rpc.mainnet.chain.robinhood.com",
+    "explorer": "https://explorer.mainnet.chain.robinhood.com"
+  },
+  "compiler": {
+    "version": "v0.8.24+commit.e11b9ed9",
+    "evmVersion": "shanghai",
+    "optimizer": {
+      "enabled": true,
+      "runs": 200
+    },
+    "metadata": {
+      "appendCBOR": false,
+      "bytecodeHash": "none"
+    }
+  },
+  "protocol": {
+    "name": "lavFACTORY",
+    "factory": {
+      "address": "0x262d4d478eFe72Eb1731310a4f7A252644aA4B5F",
+      "verified": "partial match",
+      "owner": null,
+      "creationFeeWei": "2000000000000000"
+    },
+    "treasury": {
+      "address": "0xeDbc87E40491b9edF65940acF63A5c0E81d8a4f1",
+      "type": "Safe",
+      "threshold": "2/3"
+    },
+    "erc6551Registry": "0x000000006551c19487814612e58FE06813775758",
+    "erc6551Implementation": {
+      "address": "0xC55D74fba44eb126ef5F6FbCcb93e443d4f40902",
+      "verified": "partial match",
+      "upgradeable": false
+    }
+  },
+  "vaultParameters": {
+    "streamDuration": 86400,
+    "protocolYieldFeeBps": 1000,
+    "taxProtocolShareBps": 1000,
+    "ragequitBurnBps": 500,
+    "shareOffset": "1000000",
+    "creationFee": "0.002 ether",
+    "burnAddress": "0x000000000000000000000000000000000000dEaD"
+  }
+}

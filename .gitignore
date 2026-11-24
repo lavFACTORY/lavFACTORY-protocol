@@ -1,0 +1,13 @@
+# Environment & keys
+.env
+.env.*
+*.key
+keystore/
+broadcast/
+
+# Build artifacts
+cache/
+out/
+artifacts/
+node_modules/
+*.log
