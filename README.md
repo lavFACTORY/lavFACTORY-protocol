@@ -93,3 +93,20 @@ Ecosystem adapters can route liquidity pool creator fees and external revenue in
 
 `UNLICENSED` — All rights reserved. Source published for transparency, auditing, and verification purposes only.
 `ERC6551Account.sol` is based on the reference implementation under MIT License.
+
+## Build & Test
+
+```bash
+git clone --recursive https://github.com/lavFACTORY/lavFACTORY-protocol
+cd lavFACTORY-protocol
+forge build
+forge test
+```
+
+### Onchain Verification
+
+```bash
+export ROBINHOOD_RPC_URL=https://rpc.mainnet.chain.robinhood.com
+chmod +x script/check-onchain.sh
+./script/check-onchain.sh
+```
