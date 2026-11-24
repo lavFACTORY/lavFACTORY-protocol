@@ -38,15 +38,16 @@ Any project can create a sovereign vault for its ERC-20 token. Stakers deposit t
 
 #### Engine 1: Body Growth (Staking Token)
 - Staking tokens sent to the vault via transfer taxes or direct contribution increase the underlying principal (`totalBody`).
-- 10% is routed to the protocol treasury Safe, and 90% is credited instantly to stakers pro rata.
+- While the vault has active positions (`totalShares > 0`), 10% is routed to the protocol treasury Safe and 90% is credited instantly to stakers pro rata.
+- **Empty-vault tax sweep:** If staking-token tax arrives while `totalShares == 0` (before the first deposit, or after all positions have exited), there are no stakers to credit. In that case 10% goes to the protocol treasury Safe and 90% is transferred to the current vault owner (`TaxSweptEarly`). If ownership has been renounced (`owner == address(0)`), or if the transfer to the owner fails, the full amount goes to the protocol treasury Safe. This can occur any number of times over the vault's lifetime.
 
 #### Engine 2: Yield Streaming (Reward Token)
 - Incoming revenue (e.g. trading fees via ecosystem adapters or direct protocol yield) is streamed to active stakers:
   - 10% protocol fee to the protocol treasury Safe.
   - 90% distributed evenly over a continuous 24-hour stream (`STREAM_DURATION = 86400`).
 - Any new yield arrival merges with unstreamed tokens (`remaining`) and initiates a fresh 24-hour linear release window.
-- **Empty Vault Protection:** If all positions exit (`totalShares == 0`), the stream timer pauses automatically (`periodFinish` shifts forward). When a new deposit arrives, the stream resumes without any loss of reward funds.
-- The vault owner receives no special yield allocation and cannot withdraw unstreamed staker funds.
+- **Empty Vault Protection:** If all positions exit or before the first deposit (`totalShares == 0`), the stream timer pauses automatically (`periodFinish` shifts forward: `periodFinish += block.timestamp - last`). When a new deposit arrives, the stream resumes without any loss of reward funds.
+- The vault owner receives no allocation of reward-token yield and cannot withdraw unstreamed staker funds. The only case where the owner receives staking tokens is the empty-vault tax sweep described in Engine 1.
 
 ### 4. Claiming & Ragequit Exit
 - **Yield Claim (`claimYield`):** Accrued yield can be claimed at any time with 0% penalty and 0% withdrawal fees. The underlying position remains active.
@@ -62,11 +63,13 @@ Any project can create a sovereign vault for its ERC-20 token. Stakers deposit t
 - Transferring the position NFT seamlessly transfers ownership of the account and all underlying assets held within it.
 - ⚠️ **Critical Notice:** Always withdraw all assets from the position's token-bound account prior to executing `ragequit`. Burning the position NFT permanently revokes signer authorization for the account; any remaining tokens or airdrops become irrecoverable.
 
-#### 6. Vault Ownership & Descriptors
-- The vault creator retains the role of vault owner with strictly scoped permissions:
-  - Can only update the visual/metadata card descriptor (`setDescriptor`).
-  - Cannot access user deposits, adjust fee parameters, or withdraw yield.
-  - The descriptor is executed exclusively via read-only `tokenURI` calls and cannot interrupt deposits, claims, or ragequits.
+### 6. Vault Ownership & Descriptors
+The vault creator is the initial vault owner with strictly scoped configuration capabilities:
+- **Metadata & Appearance:** Can update the visual/metadata card descriptor (`setDescriptor`), base URI (`setBaseURI`), contract URI (`setContractURI`, `freezeContractURI`), and card color palette (`setPalette`).
+- **Ownership Management:** Can transfer or renounce ownership by calling `transferOwnership(newOwner)` or `transferOwnership(address(0))`.
+- **Empty-Vault Sweep Recipient:** Can receive 90% of staking-token tax that arrives while `totalShares == 0` (see *Empty-vault tax sweep*).
+
+The owner **cannot** access user deposits, adjust fee parameters, pause the vault, block `claimYield` or `ragequit`, or withdraw streamed or unstreamed yield. The descriptor is executed exclusively via read-only `tokenURI` calls and cannot interrupt deposits, claims, or ragequits.
 
 ---
 
