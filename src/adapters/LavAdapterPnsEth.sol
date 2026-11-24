@@ -1,81 +1,39 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.24;
 
-/// @title LavAdapterPns: lavADAPTER v1.0.1 (PNS)
+/// @title LavAdapterPnsEth: lavADAPTER v1.0.1 (PNS, native ETH)
 /// @author lavFACTORY protocol author
-/// @notice One adapter per PNS token. Receives the creator fee stream from the PNS fee escrow,
-///         splits it between the lavNFT vault (creator tax part) and a team wallet (base part).
-///         10% of the team part goes to the protocol treasury (the one the vault uses).
+/// @notice Variant of LavAdapterPns for PNS launches paired with native ETH. PNS reports such a launch with the
+///         zero address as pair token and pays the creator fee in native ETH through the native path of its fee
+///         escrow. This adapter claims the ETH, wraps it into WETH and splits the WETH exactly like LavAdapterPns
+///         splits its pair token: the vault part goes to a LAV whose yield token is WETH, the team part goes to the
+///         team wallet, and 10% of the team part goes to the protocol treasury. All payouts are in WETH.
 ///         No admin, no proxy. The team wallet can only be changed by itself, in two steps.
 ///
 /// All rights reserved.
 
-interface IERC20 {
-    function balanceOf(address) external view returns (uint256);
-    function transfer(address, uint256) external returns (bool);
-    function decimals() external view returns (uint8);
+import {
+    IERC20, PnsFeePolicy, PnsLaunch, IPnsFactory, IPnsCurve, ILavVault, ILavFactory
+} from "./LavAdapterPns.sol";
+
+/// @dev Native-ETH path of the PNS fee escrow.
+interface IPnsFeeEscrowNative {
+    function claim(uint256 amount) external returns (uint256);
+    function balanceOf(address recipient) external view returns (uint256);
 }
 
-interface IPnsFeeEscrow {
-    function claimToken(address token, uint256 amount) external returns (uint256);
-    function balanceOfToken(address recipient, address token) external view returns (uint256);
+interface IWETH {
+    function deposit() external payable;
 }
 
-struct PnsFeePolicy {
-    address protocolFeeRecipient;
-    uint16 protocolFeeShareBps;
-    uint16 buybackBurnBps;
-    uint16 hookFeeBps;
-    uint16 maxInternalPriceImpactBps;
-}
-
-struct PnsLaunch {
-    address token;
-    address curve;
-    address deployer;
-    address creatorFeeRecipient;
-    address pairToken;
-    uint256 graduationThreshold;
-    uint24 poolFee;
-    int24 tickSpacing;
-    uint16 creatorTaxBps;
-    bool buybackEnabled;
-    uint8 phase;
-    uint256 sweptQuote;
-    uint256 sweptTokens;
-    uint256 sweptAt;
-    bool exists;
-}
-
-interface IPnsFactory {
-    function getLaunchedToken(address token) external view returns (PnsLaunch memory);
-    function getLaunchFeePolicy(address token) external view returns (PnsFeePolicy memory);
-}
-
-interface IPnsCurve {
-    function feeBps() external view returns (uint256);
-    function graduated() external view returns (bool);
-    function sweepFees(uint256 minBuybackTokensOut) external;
-}
-
-interface ILavVault {
-    function stakingToken() external view returns (address);
-    function yieldToken() external view returns (address);
-    function protocolTreasury() external view returns (address);
-    function syncYield() external;
-}
-
-interface ILavFactory {
-    function isVault(address) external view returns (bool);
-}
-
-/// @notice One adapter per PNS token. It is the creator-fee recipient on the PNS side, claims USDG from the
-///         PNS fee escrow, and splits it between a LAV (Liquid Account Vault) and a team wallet. 10% of the team
-///         part goes to the protocol treasury (read from the LAV once, at binding).
+/// @notice One adapter per PNS token paired with native ETH. It is the creator-fee recipient on the PNS side,
+///         claims native ETH from the PNS fee escrow, wraps it into WETH, and splits the WETH between a LAV
+///         (Liquid Account Vault) and a team wallet. 10% of the team part goes to the protocol treasury (read
+///         from the LAV once, at binding).
 ///         No admin, no proxy.
-contract LavAdapterPns {
+contract LavAdapterPnsEth {
     /// @notice Version label: lavADAPTER v.<integration code>.<major.minor.patch>.
-    string public constant VERSION = "lavADAPTER v1.0.1 (PNS)";
+    string public constant VERSION = "lavADAPTER v1.0.1 (PNS, native ETH)";
     /// @notice Floor for the LAV share, in bps of trading volume (0.10%). It only rules out a dust share; any real
     ///         launch, with or without creator tax, can bind at or above it.
     uint16 public constant MIN_VAULT_SHARE_BPS = 10;
@@ -84,8 +42,8 @@ contract LavAdapterPns {
     uint16 public constant PROTOCOL_SHARE_BPS = 1_000;
     /// @notice Hard lower bound of minPullInterval: 15 minutes. Makes looping pull() inside one transaction impossible.
     uint256 public constant MIN_PULL_INTERVAL_FLOOR = 900;
-    /// @notice Hard upper bound of maxPullPerCall, in whole quote-token units (5,000 USDG).
-    uint256 public constant MAX_PULL_CAP_WHOLE = 5_000;
+    /// @notice Hard upper bound of maxPullPerCall, in wei (2 ETH).
+    uint256 public constant MAX_PULL_CAP_WEI = 2 ether;
     uint256 internal constant SYNC_GAS = 300_000;
     /// @notice Gas that must still be available when `sweepCurve()` reaches the curve call. Without this floor a
     ///         caller-chosen gas limit could let the curve call run out of gas while the transaction itself
@@ -93,16 +51,16 @@ contract LavAdapterPns {
     uint256 public constant SWEEP_MIN_GAS = 400_000;
 
     /// @notice PNS fee escrow the creator fees are claimed from.
-    IPnsFeeEscrow public immutable escrow;
+    IPnsFeeEscrowNative public immutable escrow;
     /// @notice PNS launch factory, source of the per-launch fee terms.
     IPnsFactory public immutable pnsFactory;
     /// @notice Canonical LavFactory; only LAVs it created are accepted.
     ILavFactory public immutable lavFactory;
-    /// @notice Quote token paid by PNS (USDG).
-    address public immutable usdg;
+    /// @notice Wrapped Ether. Every payout of this adapter is made in it; the LAV's yield token must equal it.
+    address public immutable weth;
     /// @notice Address that created this adapter; the only caller of bindVault.
     address public immutable deployer;
-    /// @notice Maximum USDG processed by one pull().
+    /// @notice Maximum ETH (in wei) processed by one pull().
     uint256 public immutable maxPullPerCall;
     /// @notice Minimum seconds between two successful pull() calls.
     uint256 public immutable minPullInterval;
@@ -124,7 +82,7 @@ contract LavAdapterPns {
     address public teamWallet;
     /// @notice Proposed new team wallet, waiting for acceptTeamWallet().
     address public pendingTeamWallet;
-    /// @notice Team part that could not be paid yet (for example USDG blocklist).
+    /// @notice Team part that could not be paid yet, in WETH.
     uint256 public teamOwed;
     /// @notice LAV part that could not be paid yet.
     uint256 public vaultOwed;
@@ -132,6 +90,8 @@ contract LavAdapterPns {
     uint256 public treasuryOwed;
     /// @notice Timestamp of the last successful pull().
     uint256 public lastPull;
+    /// @dev Reentrancy lock for pull() and the three claim functions.
+    bool private locked;
 
     event Bound(address indexed vault, address indexed token, uint16 vaultBps, uint16 teamBps);
     event Pulled(uint256 total, uint256 toVault, uint256 toTeam, uint256 toTreasury);
@@ -161,34 +121,36 @@ contract LavAdapterPns {
     error IntervalTooShort();
     error CapTooHigh();
     error TransferFailed();
+    error Reentrancy();
+    error WethNot18Decimals();
     error InsufficientGas();
 
     /// @param _escrow PNS fee escrow.
     /// @param _pnsFactory PNS launch factory.
     /// @param _lavFactory canonical LavFactory.
-    /// @param _usdg quote token of the PNS launch.
-    /// @param _maxPullPerCall cap of one pull(), in USDG units (for example 50e6).
+    /// @param _weth Wrapped Ether (18 decimals). ETH claimed from PNS is wrapped into it.
+    /// @param _maxPullPerCall cap of one pull(), in wei (for example 0.02 ether).
     /// @param _minPullInterval pause between pulls in seconds (for example 3600).
     constructor(
         address _escrow,
         address _pnsFactory,
         address _lavFactory,
-        address _usdg,
+        address _weth,
         uint256 _maxPullPerCall,
         uint256 _minPullInterval
     ) {
-        if (_escrow == address(0) || _pnsFactory == address(0) || _lavFactory == address(0) || _usdg == address(0)) {
+        if (_escrow == address(0) || _pnsFactory == address(0) || _lavFactory == address(0) || _weth == address(0)) {
             revert ZeroAddress();
         }
-        require(_usdg.code.length > 0, "USDG not a contract");
+        require(_weth.code.length > 0, "WETH not a contract");
+        if (IERC20(_weth).decimals() != 18) revert WethNot18Decimals();
         require(_maxPullPerCall > 0, "Zero cap");
         if (_minPullInterval < MIN_PULL_INTERVAL_FLOOR) revert IntervalTooShort();
-        // bound is expressed in whole units of the quote token, so it is 5,000_000_000 for a 6-decimals USDG
-        if (_maxPullPerCall > MAX_PULL_CAP_WHOLE * (10 ** uint256(IERC20(_usdg).decimals()))) revert CapTooHigh();
-        escrow = IPnsFeeEscrow(_escrow);
+        if (_maxPullPerCall > MAX_PULL_CAP_WEI) revert CapTooHigh();
+        escrow = IPnsFeeEscrowNative(_escrow);
         pnsFactory = IPnsFactory(_pnsFactory);
         lavFactory = ILavFactory(_lavFactory);
-        usdg = _usdg;
+        weth = _weth;
         maxPullPerCall = _maxPullPerCall;
         minPullInterval = _minPullInterval;
         deployer = msg.sender;
@@ -196,7 +158,7 @@ contract LavAdapterPns {
 
     /// @notice One-time binding to a LAV and to the PNS terms of one token.
     /// @dev Only the deployer. Reads the fee terms PNS froze for `token`.
-    /// @param _vault LAV created by the canonical LavFactory for `token` with USDG as yield token.
+    /// @param _vault LAV created by the canonical LavFactory for `token` with WETH as yield token.
     /// @dev Vault authenticity (isVault on the configured LavFactory) is validated once, at binding time.
     /// @param token the PNS token.
     /// @param _teamWallet receiver of the team part.
@@ -208,13 +170,14 @@ contract LavAdapterPns {
         if (_teamWallet == address(0)) revert ZeroAddress();
         if (!lavFactory.isVault(_vault)) revert NotVault();
         ILavVault v = ILavVault(_vault);
-        if (v.stakingToken() != token || v.yieldToken() != usdg) revert WrongVaultTokens();
+        if (v.stakingToken() != token || v.yieldToken() != weth) revert WrongVaultTokens();
         address treasury_ = v.protocolTreasury();
         if (treasury_ == address(0)) revert ZeroAddress();
 
         PnsLaunch memory l = pnsFactory.getLaunchedToken(token);
-        if (!l.exists || l.pairToken != usdg) revert NotLaunched();
-        // With buyback on, part of the creator base share is spent on a buyback, not paid in USDG.
+        // PNS reports a native ETH launch with the zero address as pair token.
+        if (!l.exists || l.pairToken != address(0)) revert NotLaunched();
+        // With buyback on, part of the creator base share is spent on a buyback, not paid in ETH.
         if (l.buybackEnabled) revert BuybackNotSupported();
         PnsFeePolicy memory p = pnsFactory.getLaunchFeePolicy(token);
         // While the token is still on the bonding curve, the curve charges its own feeBps.
@@ -242,22 +205,33 @@ contract LavAdapterPns {
         emit Bound(_vault, token, vaultShareBps_, uint16(team));
     }
 
-    /// @notice Public. Claims USDG from the PNS escrow (at most maxPullPerCall, at most once per
-    ///         minPullInterval), adds USDG sent to this adapter directly, and splits the total.
+    /// @notice Accepts native ETH: the PNS escrow pays claims here, and anyone may send ETH to be split.
+    /// @dev No logic on purpose, so a payment can never fail or re-enter.
+    receive() external payable {}
+
+    modifier nonReentrant() {
+        if (locked) revert Reentrancy();
+        locked = true;
+        _;
+        locked = false;
+    }
+
+    /// @notice Public. Claims native ETH from the PNS escrow (at most maxPullPerCall, at most once per
+    ///         minPullInterval), adds ETH and WETH sent to this adapter directly, wraps the ETH and splits the total.
     /// @dev Never reverts on a failed payout: the failed part goes to vaultOwed, teamOwed or treasuryOwed and is never
-    ///      split again. The amount actually received from the escrow is measured, so a quote token that
-    ///      charges a transfer fee cannot break the accounting. Returns 0 without effect before binding or
-    ///      inside the pause.
-    /// @return total USDG split by this call.
-    function pull() external returns (uint256 total) {
+    ///      split again. The ETH actually received from the escrow is measured. Returns 0 without effect before
+    ///      binding or inside the pause.
+    /// @return total wei split by this call (paid out as WETH).
+    function pull() external nonReentrant returns (uint256 total) {
         if (!bound) return 0;
         if (block.timestamp < lastPull + minPullInterval) return 0;
 
-        uint256 bal = IERC20(usdg).balanceOf(address(this));
+        // ETH and WETH on the adapter count together: every wei here is either owed or waiting to be split.
+        uint256 bal = IERC20(weth).balanceOf(address(this)) + address(this).balance;
         uint256 owed = teamOwed + vaultOwed + treasuryOwed;
         uint256 local = bal > owed ? bal - owed : 0;
-        uint256 want = local + escrow.balanceOfToken(address(this), usdg);
-        // One cap for every source: escrow claim and USDG already on the adapter together never exceed
+        uint256 want = local + escrow.balanceOf(address(this));
+        // One cap for every source: escrow claim and funds already on the adapter together never exceed
         // maxPullPerCall in one call. Whatever is above waits on the adapter for the next interval.
         uint256 target = want > maxPullPerCall ? maxPullPerCall : want;
         if (target == 0) return 0;
@@ -266,12 +240,18 @@ contract LavAdapterPns {
         uint256 fromLocal = local > target ? target : local;
         uint256 received;
         if (target > fromLocal) {
-            uint256 before = IERC20(usdg).balanceOf(address(this));
-            escrow.claimToken(usdg, target - fromLocal);
-            received = IERC20(usdg).balanceOf(address(this)) - before;
+            uint256 before = address(this).balance;
+            escrow.claim(target - fromLocal);
+            received = address(this).balance - before;
         }
         total = fromLocal + received;
+        // If the escrow ever pays more than asked, the surplus stays on the adapter for the next interval.
+        if (total > target) total = target;
         if (total == 0) return 0;
+
+        // Wrap every wei of native ETH held; from here on the adapter works in WETH only.
+        uint256 native = address(this).balance;
+        if (native > 0) IWETH(weth).deposit{value: native}();
 
         uint256 toVault = (total * vaultBps) / (uint256(vaultBps) + teamBps);
         uint256 teamPart = total - toVault; // remainder rule: rounding dust stays in the team part
@@ -297,9 +277,9 @@ contract LavAdapterPns {
         emit Pulled(total, toVault, toTeam, toTreasury);
     }
 
-    /// @dev Low-level USDG transfer that reports failure instead of reverting.
+    /// @dev Low-level WETH transfer that reports failure instead of reverting.
     function _tryTransfer(address to, uint256 amount) internal returns (bool) {
-        (bool ok, bytes memory d) = usdg.call(abi.encodeWithSelector(IERC20.transfer.selector, to, amount));
+        (bool ok, bytes memory d) = weth.call(abi.encodeWithSelector(IERC20.transfer.selector, to, amount));
         return ok && (d.length == 0 || abi.decode(d, (bool)));
     }
 
@@ -324,7 +304,7 @@ contract LavAdapterPns {
     }
 
     /// @notice Public. Retries a vault payout that failed earlier.
-    function claimVaultOwed() external {
+    function claimVaultOwed() external nonReentrant {
         uint256 a = vaultOwed;
         if (a == 0) return;
         vaultOwed = 0;
@@ -333,8 +313,8 @@ contract LavAdapterPns {
         emit VaultOwedPaid(a);
     }
 
-    /// @notice Public. Retries a team payout that failed earlier (for example USDG blocklist).
-    function claimTeamOwed() external {
+    /// @notice Public. Retries a team payout that failed earlier.
+    function claimTeamOwed() external nonReentrant {
         uint256 a = teamOwed;
         if (a == 0) return;
         teamOwed = 0;
@@ -343,7 +323,7 @@ contract LavAdapterPns {
     }
 
     /// @notice Public. Retries a protocol payout that failed earlier.
-    function claimTreasuryOwed() external {
+    function claimTreasuryOwed() external nonReentrant {
         uint256 a = treasuryOwed;
         if (a == 0) return;
         treasuryOwed = 0;
