@@ -58,7 +58,6 @@ done
 
 # 6. Protocol Treasury Safe threshold (2-of-3)
 check safe-threshold "$(call $TREASURY 'getThreshold()(uint256)' | awk '{print $1}')" "$EXPECTED_THRESHOLD"
-check safe-owners    "$(call $TREASURY 'getOwners()(address[])' | tr ',' '
-' | grep -c 0x)" "$EXPECTED_OWNERS"
+check safe-owners    "$(call $TREASURY 'getOwners()(address[])' | tr ',' '\n' | grep -c 0x)" "$EXPECTED_OWNERS"
 
 exit $fail
