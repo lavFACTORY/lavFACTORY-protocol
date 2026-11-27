@@ -1,10 +1,61 @@
 # lavFACTORY
 
-Permissionless factory and standard for Liquid Account Vaults (lavNFT) on Robinhood Chain.
+Modular Yield & Liquidity Retention Middleware  
+Permissionless factory, modular adapter framework, and standard for Liquid Account Vaults (`lavNFT`) with dual-engine yield streaming and autonomous ragequit mechanics.
 
-Any project can create a sovereign vault for its ERC-20 token. Stakers deposit the project token and receive a transferable ERC-721 position NFT. Each position automatically controls its own deterministic ERC-6551 token-bound account (TBA).
+lavFACTORY is a non-custodial infrastructure protocol built to convert speculative token volume and creator fees into sustainable, onchain-backed liquidity. Rather than locking capital in isolated staking pools, lavFACTORY acts as composable middleware connecting third-party launchpads, AMM bonding curves, and DEXs to real-yield vaults.
+
+Each vault position is minted as an ERC-721 `lavNFT` coupled with an ERC-6551 Token-Bound Account (TBA), backed by an immutable 95/5 ragequit floor and automated yield streaming in USDG, native assets, or tokenized equities.
 
 > ⚠️ **These contracts have not undergone an independent security audit. Use at your own risk.** See [SECURITY.md](./SECURITY.md) and [docs/RISKS.md](./docs/RISKS.md).
+
+---
+
+## Architecture: Plug-and-Play Integration
+
+lavFACTORY is designed to be integrated upstream by any launchpad or token factory, and downstream by DeFi primitives:
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                   Any Upstream Launchpad, Factory or AMM               │
+│   (Bonding Curves · Token Launchpads · AMM Liquidity Pools · Hooks)    │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ trading volume / creator fees / taxes
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                         lavAdapters (Modular)                          │
+│   • Lightweight adapter layer for upstream protocol fee routing        │
+│   • Direct permissionless streaming via syncYield() (zero adapter)     │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                     ┌──────────────┴──────────────┐
+                     ▼                             ▼
+          ┌─────────────────────┐       ┌─────────────────────┐
+          │ Engine 1: Principal │       │  Engine 2: Yield    │
+          │  (1% Body Growth)   │       │  (24h Linear Stream)│
+          └──────────┬──────────┘       └──────────┬──────────┘
+                     │                             │
+                     └──────────────┬──────────────┘
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                         lavNFT Position Vault                          │
+│              (ERC-6551 TBA · 95/5 Autonomous Exit Floor)               │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ composable collateral
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                  Downstream DeFi & Secondary Markets                   │
+│         (Lending markets, NFT AMMs, OTC Desks, Structured Credit)      │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+### Universal Protocol Integration
+
+The core vault architecture is completely decoupled from any specific liquidity venue or launch platform:
+
+1. **Agnostic Core Accounting:** `LavFactory` and `LiquidAccountVault` contain zero hardcoded dependencies on external platforms. The vault accepts standard ERC-20 deposits, tracks virtual shares with inflation protection, and exposes permissionless `syncYield()` streaming.
+2. **Direct Yield Inflow:** Any protocol, DAO, or external contract can stream yield directly to any vault permissionlessly without deploying an adapter.
+3. **Modular Adapter Interface (`lavAdapters`):** For platforms with custom fee-splitting, escrow, or hook mechanics, lightweight peripheral adapters can be deployed to automatically ingest creator fees, perform non-custodial routing, and feed the dual-engine streaming loop.
 
 ---
 
@@ -51,7 +102,7 @@ Any project can create a sovereign vault for its ERC-20 token. Stakers deposit t
 
 ##### Yield Inflow Paths: Adapters & Direct Top-ups
 A vault receives and streams yield through two distinct mechanisms:
-- **Automated Pool Routing (Adapters):** For vaults paired with Pons V2 (Pons Labs) liquidity pools, deployed adapter instances (`LavAdapterPns` or `LavAdapterPnsEth`) claim creator fees from the Pons V2 fee escrow and route them into the vault stream on each `pull()`. Multiple adapters can route into a single vault (`1 vault -> N adapters`), allowing one vault to aggregate creator fees across multiple pools.
+- **Automated Pool Routing (Adapters):** Deployed adapter instances (e.g. `LavAdapterPns` or `LavAdapterPnsEth`) claim creator fees from upstream fee escrows and route them into the vault stream on each `pull()`. Multiple adapters can route into a single vault (`1 vault -> N adapters`), allowing one vault to aggregate creator fees across multiple pools.
 - **Direct Manual Top-up (Any Vault):** Any vault created via `LavFactory` can receive arbitrary yield directly. The project team, community members, or external revenue sources (e.g. protocol fees, OTC sales, merchandise) can transfer `yieldToken` directly to the vault contract address and call `syncYield()`. The newly received yield is immediately added to the active 24-hour linear streaming schedule for all stakers.
 
 ### 4. Claiming & Ragequit Exit
@@ -87,21 +138,21 @@ The core protocol (`LiquidAccountVault`, `LavFactory`, and `lavNFT`) constitutes
 Peripheral adapters serve solely as optional upstream fee conduits for designated launchpad contracts and have no broader functional scope.
 
 - **Scoped Third-Party Targets (`LavAdapterPns`, `LavAdapterPnsEth`)**  
-  These adapters interface exclusively with the Pons V2 contract suite deployed on Robinhood Chain (Chain ID: 4663), specifically:  
+  These adapters interface with designated liquidity contracts on Robinhood Chain (Chain ID: 4663), specifically:  
   - `PonsV2LaunchFactory` (`0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e`)  
   - `PonsV2MemeHook` (`0xE5e702641Ea86F4ae6cC3cDaeD2B886f976Be044`)  
   - `PonsV2FeeEscrow` (`0xd3AFEB2a57f70eF218Aa82451c51B2fb0416Ac9e`)  
 
-  Their functionality is strictly limited to claiming accumulated creator quote fees from the `PonsV2FeeEscrow` contract and distributing such fees between the vault and the designated team wallet.
+  Their functionality is strictly limited to claiming accumulated creator quote fees from fee escrow contracts and distributing such fees between the vault and the designated team wallet.
 
-- **Non-Pons / Standalone Deployments**  
-  Tokens deployed outside the Pons V2 architecture do not utilise the PNS adapters. Any ERC-20 staking token may be paired with an arbitrary ERC-20 yield token through the `LavFactory.createVault()` function. Yield ingestion for standalone vaults is effected by direct transfer of assets to the vault address, followed by permissionless calls to the `syncYield()` function.
+- **Standalone Deployments**  
+  Tokens deployed outside specific pool architectures do not utilise external escrow adapters. Any ERC-20 staking token may be paired with an arbitrary ERC-20 yield token through the `LavFactory.createVault()` function. Yield ingestion for standalone vaults is effected by direct transfer of assets to the vault address, followed by permissionless calls to the `syncYield()` function.
 
 ---
 
 Ecosystem adapters route liquidity pool creator fees and external revenue streams into individual vaults. Each pool has its own deployed adapter instance:
-- **`LavAdapterPns`:** Universal adapter for ERC-20 quote pairs (including USDG and tokenized stocks). Routes creator trading fees from Pons V2 (Pons Labs) liquidity pair fee escrows into the corresponding vault. `usdg()` is the getter for the immutable pair token (either USDG or tokenized stock).
-- **`LavAdapterPnsEth`:** Claims native ETH creator trading fees from Pons V2 (Pons Labs) fee escrow, wraps them into WETH, and routes WETH yield into the vault stream.
+- **`LavAdapterPns`:** Universal adapter for ERC-20 quote pairs (including USDG and tokenized stocks). Routes creator trading fees from liquidity pair fee escrows into the corresponding vault.
+- **`LavAdapterPnsEth`:** Claims native ETH creator trading fees from fee escrows, wraps them into WETH, and routes WETH yield into the vault stream.
 
 ### Fee Split & Protocol Treasury Mechanics
 The protocol treasury receives 10% of all incoming creator fees regardless of `vaultShareBps` (with rounding dust favoring the team):
@@ -109,7 +160,7 @@ The protocol treasury receives 10% of all incoming creator fees regardless of `v
 - **Team portion:** The remainder (`total - toVault`) is split: 90% to the project team wallet (`teamWallet`) and 10% to the protocol treasury (`PROTOCOL_SHARE_BPS = 1000`).
 - **Non-blocking failure recovery:** Failed transfers accrue independently to `vaultOwed`, `teamOwed`, and `treasuryOwed`. Any caller can settle accrued debts permissionlessly via `claimVaultOwed()`, `claimTeamOwed()`, and `claimTreasuryOwed()`.
 - **Supported tokens:** Standard ERC-20 tokens only. Rebasing, fee-on-transfer, and transfer-hook (ERC-777) tokens are unsupported and can cause accounting discrepancies or reentrancy.
-- **Throughput & Parameters:** Adapter throughput is throttled at `maxPullPerCall` per `minPullInterval` (both immutable). Excess fees remain safely in the Pons V2 fee escrow and are paid out in subsequent pulls. Authoritative link is registered as the escrow `recipient`; `Bound` events are for discovery and indexing only.
+- **Throughput & Parameters:** Adapter throughput is throttled at `maxPullPerCall` per `minPullInterval` (both immutable). Excess fees remain safely in escrow and are paid out in subsequent pulls. Authoritative link is registered as the escrow `recipient`; `Bound` events are for discovery and indexing only.
 - **Multi-Adapter Support:** A single vault can receive yield streams from multiple adapters simultaneously (1 vault -> N adapters). Each adapter is permanently locked to its target vault once bound.
 - **Dynamic Vaults:** Vaults are created permissionlessly via `LavFactory.createVault()` and are not listed in static deployment files. Enumerate them onchain via `allVaults(index)` and verify any address with `LavFactory.isVault(addr)`.
 
@@ -147,7 +198,7 @@ $$\text{Total Fee} = 10\% \times \text{Vault Share} + 10\% \times \text{Team Sha
 
 ## License
 
-`UNLICENSED` — All rights reserved. Source published for transparency, auditing, and verification purposes only.
+`UNLICENSED` — All rights reserved. Source published for transparency, auditing, and verification purposes only.  
 `ERC6551Account.sol` is based on the reference implementation under MIT License.
 
 ## Build & Test
