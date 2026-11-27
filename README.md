@@ -30,10 +30,10 @@ lavFACTORY is designed to be integrated upstream by any launchpad or token facto
                                     │
                      ┌──────────────┴──────────────┐
                      ▼                             ▼
-          ┌─────────────────────┐
-          │ Engine 1: Principal │
-          │    (Body Growth)    │
-          └──────────┬──────────┘
+          ┌─────────────────────┐       ┌─────────────────────┐
+          │ Engine 1: Principal │       │  Engine 2: Yield    │
+          │    (Body Growth)    │       │  (24h Linear Stream)│
+          └──────────┬──────────┘       └──────────┬──────────┘
                      │                             │
                      └──────────────┬──────────────┘
                                     ▼
