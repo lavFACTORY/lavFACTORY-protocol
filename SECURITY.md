@@ -8,6 +8,7 @@ The contracts **have not undergone an independent security audit**. An internal 
 - `LiquidAccountVault` (All vaults deployed via `LavFactory`)
 - `ERC6551Account`: `0xC55D74fba44eb126ef5F6FbCcb93e443d4f40902`
 - `lavADAPTER` / `lavADAPTER ETH` (Standalone fee routing adapters deployed per-project via launch interface)
+- `LavDescriptor` (Modular on-chain SVG and metadata renderers bound to vaults)
 
 ## Trust Model & Roles
 
@@ -18,6 +19,7 @@ The contracts **have not undergone an independent security audit**. An internal 
 | **Vault Owner** | Scoped strictly to `setDescriptor` (visual SVG card). Zero access to user principal or reward streams. |
 | **ERC-6551 Implementation** | Reference implementation. Non-upgradeable, no admin keys. Authorized signer strictly determined by NFT ownership. |
 | **lavADAPTER** | Immutable fee router. Binds once to vault, token, and split share at deployment. Zero upgradeability, no pause, no admin drain. |
+| **LavDescriptor** | Read-only visual & metadata renderer. Stateless, immutable, zero access to vault funds or accounting. Queried strictly in view mode via `tokenURI`. |
 
 ## Design Properties
 - **No Governance Pause:** Vaults operate autonomously and cannot be halted by administrators.
