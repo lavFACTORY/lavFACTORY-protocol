@@ -7,6 +7,7 @@ The contracts **have not undergone an independent security audit**. An internal 
 - `LavFactory`: `0x262d4d478eFe72Eb1731310a4f7A252644aA4B5F`
 - `LiquidAccountVault` (All vaults deployed via `LavFactory`)
 - `ERC6551Account`: `0xC55D74fba44eb126ef5F6FbCcb93e443d4f40902`
+- `lavADAPTER` / `lavADAPTER ETH` (Standalone fee routing adapters deployed per-project via launch interface)
 
 ## Trust Model & Roles
 
@@ -16,12 +17,14 @@ The contracts **have not undergone an independent security audit**. An internal 
 | **Protocol Treasury** | Safe (2/3 Multisig: `0xeDbc...a4f1`). Receives creation fees and protocol splits. No operational contract control. |
 | **Vault Owner** | Scoped strictly to `setDescriptor` (visual SVG card). Zero access to user principal or reward streams. |
 | **ERC-6551 Implementation** | Reference implementation. Non-upgradeable, no admin keys. Authorized signer strictly determined by NFT ownership. |
+| **lavADAPTER** | Immutable fee router. Binds once to vault, token, and split share at deployment. Zero upgradeability, no pause, no admin drain. |
 
 ## Design Properties
 - **No Governance Pause:** Vaults operate autonomously and cannot be halted by administrators.
 - **Unconditional Exit:** `ragequit` is permanently available to stakers.
 - **Gas-Metered External Calls:** Balance checks (`TOKEN_VIEW_GAS = 100_000`) and transfers (`TOKEN_XFER_GAS = 500_000`) are strictly gas-limited with bounded return data copying to prevent griefing attacks.
 - **Descriptor Isolation:** Descriptor contracts are queried strictly in view mode via `tokenURI` and cannot alter vault state or revert core operations.
+- **Adapter Pull Rate Limiting:** Cooldown periods and fixed per-call extraction limits protect fee escrows from drain anomalies.
 
 ## Vulnerability Reporting
 Please report vulnerabilities privately:
